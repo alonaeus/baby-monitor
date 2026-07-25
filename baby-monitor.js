@@ -45,12 +45,14 @@ function createRoom() {
   do { code = generateCode(); } while (rooms.has(code));
   rooms.set(code, {
     sseClients: [],
+    babyClients: [],
     pushSubs: new Map(),
     lastVolume: 0,
     crying: false,
     cryTimer: null,
     lastPushAt: 0,
     threshold: 25,
+    rtc: { offer: null, babyIce: [], parentIce: [] },
   });
   return code;
 }
@@ -60,6 +62,13 @@ function getRoom(code) { return rooms.get((code || '').toUpperCase().trim()); }
 function broadcastRoom(room, payload) {
   const msg = `data: ${JSON.stringify(payload)}\n\n`;
   room.sseClients = room.sseClients.filter(res => {
+    try { res.write(msg); return true; } catch { return false; }
+  });
+}
+
+function broadcastBaby(room, payload) {
+  const msg = `data: ${JSON.stringify(payload)}\n\n`;
+  room.babyClients = room.babyClients.filter(res => {
     try { res.write(msg); return true; } catch { return false; }
   });
 }
@@ -533,6 +542,11 @@ input[type=range]{width:100%;accent-color:var(--red)}
 .wake-guide li{margin-bottom:3px}
 .wake-toggle{background:none;border:none;color:var(--muted);font-size:.75rem;cursor:pointer;
   text-decoration:underline;padding:0;margin-left:auto}
+.audio-share-btn{width:100%;max-width:280px;padding:11px 16px;border:1.5px solid var(--border);
+  border-radius:10px;background:rgba(255,255,255,.04);color:var(--muted);font-size:.82rem;
+  cursor:pointer;transition:all .2s;letter-spacing:.02em}
+.audio-share-btn:hover{border-color:rgba(255,255,255,.3);color:var(--text)}
+.audio-share-btn.on{border-color:var(--green);color:var(--green);background:rgba(46,204,113,.07)}
 </style>
 </head>
 <body>
@@ -561,6 +575,8 @@ input[type=range]{width:100%;accent-color:var(--red)}
 </div>
 
 <div class="alert-banner" id="banner">⚠️ LOUD — alert sent to parent</div>
+
+<button class="audio-share-btn" id="audioShareBtn" onclick="toggleAudioShare()">🎙 Share audio feed</button>
 
 <div class="wake-section">
   <div class="wake-row">
@@ -695,6 +711,63 @@ async function acquireWakeLock(){
 document.addEventListener('visibilitychange',()=>{
   if(running&&document.visibilityState==='visible') acquireWakeLock();
 });
+
+// ── WebRTC audio share ────────────────────────────────────────────────────────
+const audioShareBtn=document.getElementById('audioShareBtn');
+const RTC_CONFIG={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]};
+let rtcPc=null,sharingAudio=false;
+
+function connectBabySSE(){
+  const sse=new EventSource('/baby-events?code='+CODE);
+  sse.onmessage=async e=>{
+    try{
+      const msg=JSON.parse(e.data);
+      if(msg.type==='rtc-answer'&&rtcPc&&rtcPc.signalingState==='have-local-offer'){
+        await rtcPc.setRemoteDescription(msg.sdp);
+      }
+      if(msg.type==='rtc-ice'&&msg.from==='parent'&&rtcPc){
+        await rtcPc.addIceCandidate(msg.candidate).catch(()=>{});
+      }
+    }catch{}
+  };
+}
+
+async function toggleAudioShare(){
+  if(sharingAudio){stopAudioShare();return;}
+  if(!running){status.textContent='Start mic first, then share audio';return;}
+  await startAudioShare();
+}
+
+async function startAudioShare(){
+  rtcPc=new RTCPeerConnection(RTC_CONFIG);
+  stream.getAudioTracks().forEach(t=>rtcPc.addTrack(t,stream));
+  rtcPc.onicecandidate=e=>{
+    if(e.candidate)
+      fetch('/rtc/ice?code='+CODE+'&from=baby',{method:'POST',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify(e.candidate)}).catch(()=>{});
+  };
+  rtcPc.onconnectionstatechange=()=>{
+    if(rtcPc.connectionState==='connected'){
+      audioShareBtn.textContent='🎙 Audio live'; audioShareBtn.classList.add('on');
+    }
+    if(rtcPc.connectionState==='disconnected'||rtcPc.connectionState==='failed') stopAudioShare();
+  };
+  const offer=await rtcPc.createOffer();
+  await rtcPc.setLocalDescription(offer);
+  await fetch('/rtc/offer?code='+CODE,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(offer)}).catch(()=>{});
+  sharingAudio=true;
+  audioShareBtn.textContent='🎙 Sharing… (tap to stop)';
+}
+
+function stopAudioShare(){
+  rtcPc?.close();rtcPc=null;sharingAudio=false;
+  fetch('/rtc/reset?code='+CODE,{method:'POST'}).catch(()=>{});
+  audioShareBtn.textContent='🎙 Share audio feed';
+  audioShareBtn.classList.remove('on');
+}
+
+connectBabySSE();
 ${THEME_PICKER_JS}
 </script>
 </body>
@@ -798,6 +871,7 @@ button.action.muted{border-color:var(--red);color:var(--red)}
     <button class="action" id="muteBtn" onclick="toggleMute()">🔔 Sound on</button>
     <button class="action" onclick="testAlert()">▶ Test sound</button>
   </div>
+  <button class="action" id="listenBtn" onclick="toggleListen()">🎧 Listen live</button>
   <button class="action" id="pushBtn" onclick="enablePush()">🔔 Enable push alerts</button>
   <div class="setup-box" id="setupBox">
     <strong>Get notified when phone is sleeping:</strong>
@@ -929,11 +1003,62 @@ function setPushActive(){
 function connectSSE(){
   const es=new EventSource('/events?code='+CODE);
   es.onopen=()=>{ dot.classList.remove('off'); connLbl.textContent='Connected'; reconnectDelay=1000; };
-  es.onmessage=e=>{ try{ const{volume}=JSON.parse(e.data); onVolume(volume); }catch{} };
+  es.onmessage=e=>{
+    try{
+      const msg=JSON.parse(e.data);
+      if(msg.type==='rtc-offer'){ pendingOffer=msg.sdp; if(listening) doAnswer(); }
+      else if(msg.type==='rtc-ice'&&msg.from==='baby'&&rtcPc){
+        rtcPc.addIceCandidate(msg.candidate).catch(()=>{});
+      } else if(msg.volume!==undefined){ onVolume(msg.volume); }
+    }catch{}
+  };
   es.onerror=()=>{
     dot.classList.add('off'); connLbl.textContent='Reconnecting…'; es.close();
     setTimeout(connectSSE,reconnectDelay); reconnectDelay=Math.min(reconnectDelay*1.5,10000);
   };
+}
+
+// ── WebRTC listen ─────────────────────────────────────────────────────────────
+const listenBtn=document.getElementById('listenBtn');
+const LRTC_CONFIG={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]};
+let rtcPc=null,listening=false,pendingOffer=null,audioEl=null;
+
+async function toggleListen(){
+  if(listening){stopListen();return;}
+  listening=true;
+  listenBtn.textContent='🎧 Connecting…';
+  if(pendingOffer) await doAnswer();
+  else listenBtn.textContent='🎧 Waiting for baby…';
+}
+
+async function doAnswer(){
+  if(!listening||!pendingOffer) return;
+  rtcPc=new RTCPeerConnection(LRTC_CONFIG);
+  rtcPc.ontrack=e=>{
+    if(!audioEl){ audioEl=new Audio(); audioEl.autoplay=true; }
+    audioEl.srcObject=e.streams[0];
+    audioEl.play().catch(()=>{});
+    listenBtn.textContent='🎧 Listening live'; listenBtn.classList.add('push-on');
+  };
+  rtcPc.onicecandidate=e=>{
+    if(e.candidate)
+      fetch('/rtc/ice?code='+CODE+'&from=parent',{method:'POST',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify(e.candidate)}).catch(()=>{});
+  };
+  rtcPc.onconnectionstatechange=()=>{
+    if(rtcPc.connectionState==='disconnected'||rtcPc.connectionState==='failed') stopListen();
+  };
+  await rtcPc.setRemoteDescription(pendingOffer);
+  const answer=await rtcPc.createAnswer();
+  await rtcPc.setLocalDescription(answer);
+  await fetch('/rtc/answer?code='+CODE,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(answer)}).catch(()=>{});
+}
+
+function stopListen(){
+  rtcPc?.close();rtcPc=null;listening=false;pendingOffer=null;
+  if(audioEl){audioEl.srcObject=null;audioEl=null;}
+  listenBtn.textContent='🎧 Listen live'; listenBtn.classList.remove('push-on');
 }
 
 initSW();
@@ -996,8 +1121,9 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache',
       'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' });
     res.write(`data: ${JSON.stringify({ volume: room.lastVolume })}\n\n`);
+    // Send any pending WebRTC offer so parent can auto-connect
+    if (room.rtc.offer) res.write(`data: ${JSON.stringify({ type: 'rtc-offer', sdp: room.rtc.offer })}\n\n`);
     room.sseClients.push(res);
-    // Keepalive ping every 20s — prevents Railway/nginx from closing idle connections
     const ping = setInterval(() => {
       try { res.write(':ping\n\n'); } catch { clearInterval(ping); }
     }, 20000);
@@ -1006,6 +1132,66 @@ const server = http.createServer(async (req, res) => {
       room.sseClients = room.sseClients.filter(c => c !== res);
     });
     return;
+  }
+
+  if (pathname === '/baby-events') {
+    const room = getRoom(code);
+    if (!room) { res.writeHead(404); return res.end(); }
+    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' });
+    room.babyClients.push(res);
+    const ping = setInterval(() => {
+      try { res.write(':ping\n\n'); } catch { clearInterval(ping); }
+    }, 20000);
+    req.on('close', () => {
+      clearInterval(ping);
+      room.babyClients = room.babyClients.filter(c => c !== res);
+    });
+    return;
+  }
+
+  if (pathname === '/rtc/offer' && req.method === 'POST') {
+    const room = getRoom(code);
+    if (room) {
+      try {
+        room.rtc.offer = JSON.parse(await readBody(req));
+        room.rtc.babyIce = [];
+        broadcastRoom(room, { type: 'rtc-offer', sdp: room.rtc.offer });
+      } catch {}
+    }
+    res.writeHead(204); return res.end();
+  }
+
+  if (pathname === '/rtc/answer' && req.method === 'POST') {
+    const room = getRoom(code);
+    if (room) {
+      try {
+        const answer = JSON.parse(await readBody(req));
+        broadcastBaby(room, { type: 'rtc-answer', sdp: answer });
+        // Flush any buffered baby ICE to parent (already sent inline, just clear parent buffer)
+        room.rtc.parentIce = [];
+      } catch {}
+    }
+    res.writeHead(204); return res.end();
+  }
+
+  if (pathname === '/rtc/ice' && req.method === 'POST') {
+    const room = getRoom(code);
+    const from = url.searchParams.get('from');
+    if (room && (from === 'baby' || from === 'parent')) {
+      try {
+        const candidate = JSON.parse(await readBody(req));
+        if (from === 'baby') broadcastRoom(room, { type: 'rtc-ice', candidate, from: 'baby' });
+        else broadcastBaby(room, { type: 'rtc-ice', candidate, from: 'parent' });
+      } catch {}
+    }
+    res.writeHead(204); return res.end();
+  }
+
+  if (pathname === '/rtc/reset' && req.method === 'POST') {
+    const room = getRoom(code);
+    if (room) { room.rtc = { offer: null, babyIce: [], parentIce: [] }; }
+    res.writeHead(204); return res.end();
   }
 
   if (pathname === '/volume' && req.method === 'POST') {
