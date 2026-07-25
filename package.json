@@ -1,0 +1,16 @@
+{
+  "name": "baby-monitor",
+  "version": "1.0.0",
+  "description": "",
+  "main": "baby-monitor.js",
+  "scripts": {
+    "start": "node baby-monitor.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "web-push": "^3.6.7"
+  }
+}
