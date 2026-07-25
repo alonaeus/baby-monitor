@@ -15,7 +15,6 @@ catch { console.error('\n  Run npm install first\n'); process.exit(1); }
 const PORT = process.env.PORT || 3000;
 const KEYS_FILE = path.join(__dirname, 'vapid-keys.json');
 
-// VAPID keys: env vars on Railway, local file in dev
 let VAPID_PUBLIC, VAPID_PRIVATE;
 if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY;
@@ -37,7 +36,7 @@ webpush.setVapidDetails('mailto:baby@monitor.local', VAPID_PUBLIC, VAPID_PRIVATE
 const rooms = new Map();
 
 function generateCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1 (confusing)
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   return Array.from({ length: 6 }, () => chars[crypto.randomInt(chars.length)]).join('');
 }
 
@@ -56,9 +55,7 @@ function createRoom() {
   return code;
 }
 
-function getRoom(code) {
-  return rooms.get((code || '').toUpperCase().trim());
-}
+function getRoom(code) { return rooms.get((code || '').toUpperCase().trim()); }
 
 function broadcastRoom(room, payload) {
   const msg = `data: ${JSON.stringify(payload)}\n\n`;
@@ -123,15 +120,190 @@ const MANIFEST = JSON.stringify({
   icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }],
 });
 
-// ── Shared CSS vars ───────────────────────────────────────────────────────────
+// ── Theme init script (injected in <head> to prevent flash) ───────────────────
+const THEME_INIT = `<script>(function(){var t=localStorage.getItem('bm-theme')||'dark';document.documentElement.setAttribute('data-theme',t);})();<\/script>`;
+
+// ── Shared CSS ────────────────────────────────────────────────────────────────
 const BASE_CSS = `
-  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  :root{--bg:#0f0f1a;--card:#16162a;--green:#2ecc71;--red:#e74c3c;--amber:#f39c12;
-    --muted:rgba(255,255,255,.45);--border:rgba(255,255,255,.1)}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-    background:var(--bg);color:#fff;min-height:100dvh}
-  input,button{font-family:inherit}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f0f1a;--card:#16162a;--green:#2ecc71;--red:#e74c3c;--amber:#f39c12;
+  --muted:rgba(255,255,255,.45);--border:rgba(255,255,255,.1);--text:#fff;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:var(--bg);color:var(--text);min-height:100dvh}
+input,button{font-family:inherit}
+
+/* ── Dieter Rams / Braun theme ─────────────────────────────────────────────── */
+[data-theme="rams"]{
+  --bg:#E0D9CF;--card:#D4CEC4;--green:#3B4B59;--red:#AF2E1B;--amber:#CC6324;
+  --muted:rgba(26,20,14,.48);--border:rgba(26,20,14,.13);--text:#1A1410;
+}
+[data-theme="rams"] body{background:var(--bg);color:var(--text)}
+[data-theme="rams"] body.cry{background:#D4C5BC}
+[data-theme="rams"] .top-bar{background:rgba(224,217,207,.93);border-bottom-color:rgba(26,20,14,.12)}
+[data-theme="rams"] .card{background:var(--card);border-color:rgba(26,20,14,.13)}
+[data-theme="rams"] .orb{
+  border-color:#3B4B59;
+  background-color:#CCC6BC;
+  background-image:radial-gradient(circle,rgba(26,20,14,.28) 1.5px,transparent 1.5px);
+  background-size:9px 9px;
+  box-shadow:inset 0 1px 4px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.08);
+  animation:none!important
+}
+[data-theme="rams"] .orb.cry{
+  border-color:#AF2E1B;
+  background-color:#C8BDB6;
+  background-image:radial-gradient(circle,rgba(175,46,27,.35) 1.5px,transparent 1.5px);
+  animation:throb .55s ease-in-out infinite alternate!important
+}
+[data-theme="rams"] .mic-btn{border-color:rgba(26,20,14,.2);background:rgba(26,20,14,.04)}
+[data-theme="rams"] .mic-btn.on{border-color:#AF2E1B;background:rgba(175,46,27,.1)}
+[data-theme="rams"] .mic-btn.on.loud{background:rgba(175,46,27,.2);box-shadow:0 0 20px rgba(175,46,27,.25)}
+[data-theme="rams"] .big-btn{background:#CC6324;color:#fff;border:none}
+[data-theme="rams"] .big-btn:hover{opacity:.88}
+[data-theme="rams"] button.action{border-color:rgba(26,20,14,.18);background:rgba(26,20,14,.05);color:var(--text)}
+[data-theme="rams"] button.action:hover{background:rgba(26,20,14,.1)}
+[data-theme="rams"] button.action.push-on{border-color:#3B4B59;color:#3B4B59}
+[data-theme="rams"] button.action.muted{border-color:#AF2E1B;color:#AF2E1B}
+[data-theme="rams"] .role-btn{border-color:rgba(26,20,14,.14);color:rgba(26,20,14,.5)}
+[data-theme="rams"] .role-btn:hover{border-color:rgba(26,20,14,.35);color:var(--text)}
+[data-theme="rams"] .role-btn.active{border-color:#CC6324;background:rgba(204,99,36,.1);color:var(--text)}
+[data-theme="rams"] .code-input{background:rgba(26,20,14,.06);border-color:rgba(26,20,14,.15);color:var(--text)}
+[data-theme="rams"] .code-input:focus{border-color:rgba(26,20,14,.4)}
+[data-theme="rams"] .join-btn{background:rgba(26,20,14,.07);border-color:rgba(26,20,14,.15);color:var(--text)}
+[data-theme="rams"] .join-btn:hover{background:rgba(26,20,14,.13)}
+[data-theme="rams"] .copy-btn{border-color:rgba(26,20,14,.18);color:rgba(26,20,14,.5)}
+[data-theme="rams"] .copy-btn:hover{color:var(--text);border-color:rgba(26,20,14,.38)}
+[data-theme="rams"] .home-link{color:rgba(26,20,14,.5)}
+[data-theme="rams"] .home-link:hover{color:var(--text)}
+[data-theme="rams"] .setup-box{background:rgba(26,20,14,.05);border-color:rgba(26,20,14,.11)}
+[data-theme="rams"] .setup-box strong{color:rgba(26,20,14,.82)}
+[data-theme="rams"] .wake-guide{background:rgba(26,20,14,.05);border-color:rgba(26,20,14,.11)}
+[data-theme="rams"] .meter-track{background:rgba(26,20,14,.1)}
+[data-theme="rams"] .meter-fill{background:linear-gradient(90deg,#3B4B59 0%,#CC6324 55%,#AF2E1B 100%)}
+[data-theme="rams"] .conn{background:rgba(26,20,14,.07)}
+[data-theme="rams"] .dot{background:#3B4B59}
+[data-theme="rams"] .dot.off{background:#AF2E1B}
+[data-theme="rams"] .divider{color:rgba(26,20,14,.38)}
+[data-theme="rams"] .divider::before,[data-theme="rams"] .divider::after{background:rgba(26,20,14,.11)}
+[data-theme="rams"] input[type=range]{accent-color:#CC6324}
+[data-theme="rams"] .alert-banner.show{background:#AF2E1B}
+[data-theme="rams"] .big-label{color:var(--text)}
+[data-theme="rams"] .big-label.cry{color:#AF2E1B}
+[data-theme="rams"] h1{color:rgba(26,20,14,.52)}
+[data-theme="rams"] .tagline{color:rgba(26,20,14,.5)}
+[data-theme="rams"] .room-code{color:var(--text)}
+[data-theme="rams"] .section-label{color:rgba(26,20,14,.45)}
+[data-theme="rams"] .ctrl-lbl{color:rgba(26,20,14,.48)}
+[data-theme="rams"] .meter-lbl{color:rgba(26,20,14,.48)}
+[data-theme="rams"] .sub{color:rgba(26,20,14,.5)}
+[data-theme="rams"] .last-alert{color:rgba(26,20,14,.48)}
+[data-theme="rams"] .status{color:rgba(26,20,14,.5)}
+[data-theme="rams"] .wake-row{color:rgba(26,20,14,.5)}
+
+/* ── Futuristic theme ───────────────────────────────────────────────────────── */
+[data-theme="future"]{
+  --bg:#020B18;--card:#061224;--green:#00D4FF;--red:#FF2060;--amber:#FFB800;
+  --muted:rgba(0,212,255,.42);--border:rgba(0,212,255,.15);--text:#C8F0FF;
+}
+[data-theme="future"] body{
+  background:var(--bg);color:var(--text);
+  background-image:linear-gradient(rgba(0,212,255,.025) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,212,255,.025) 1px,transparent 1px);
+  background-size:44px 44px;
+}
+[data-theme="future"] body.cry{background-color:#120210}
+[data-theme="future"] .top-bar{background:rgba(2,11,24,.93);border-bottom-color:rgba(0,212,255,.14)}
+[data-theme="future"] .card{background:var(--card);border-color:rgba(0,212,255,.14)}
+[data-theme="future"] .orb{
+  border-color:#00D4FF;
+  background:rgba(0,212,255,.07);
+  box-shadow:0 0 50px rgba(0,212,255,.2),inset 0 0 30px rgba(0,212,255,.05)
+}
+[data-theme="future"] .orb.cry{
+  border-color:#FF2060;
+  background:rgba(255,32,96,.08);
+  box-shadow:0 0 80px rgba(255,32,96,.4),inset 0 0 30px rgba(255,32,96,.05)
+}
+[data-theme="future"] .mic-btn{border-color:rgba(0,212,255,.25);background:rgba(0,212,255,.04)}
+[data-theme="future"] .mic-btn.on{border-color:#FF2060;background:rgba(255,32,96,.08)}
+[data-theme="future"] .mic-btn.on.loud{box-shadow:0 0 60px rgba(255,32,96,.45)}
+[data-theme="future"] .big-btn{
+  background:transparent;border:1.5px solid #00D4FF;color:#00D4FF;
+  box-shadow:0 0 18px rgba(0,212,255,.18);letter-spacing:.08em
+}
+[data-theme="future"] .big-btn:hover{background:rgba(0,212,255,.1);box-shadow:0 0 30px rgba(0,212,255,.3)}
+[data-theme="future"] button.action{border-color:rgba(0,212,255,.18);background:rgba(0,212,255,.04);color:var(--text)}
+[data-theme="future"] button.action:hover{background:rgba(0,212,255,.1);border-color:rgba(0,212,255,.38)}
+[data-theme="future"] button.action.push-on{border-color:#00D4FF;color:#00D4FF}
+[data-theme="future"] button.action.muted{border-color:#FF2060;color:#FF2060}
+[data-theme="future"] .role-btn{border-color:rgba(0,212,255,.18);color:rgba(0,212,255,.5)}
+[data-theme="future"] .role-btn:hover{border-color:rgba(0,212,255,.45);color:var(--text)}
+[data-theme="future"] .role-btn.active{border-color:#00D4FF;background:rgba(0,212,255,.08);color:#00D4FF}
+[data-theme="future"] .code-input{background:rgba(0,212,255,.04);border-color:rgba(0,212,255,.18);color:var(--text)}
+[data-theme="future"] .code-input:focus{border-color:rgba(0,212,255,.55);box-shadow:0 0 10px rgba(0,212,255,.18)}
+[data-theme="future"] .join-btn{background:rgba(0,212,255,.05);border-color:rgba(0,212,255,.18);color:var(--text)}
+[data-theme="future"] .join-btn:hover{background:rgba(0,212,255,.12)}
+[data-theme="future"] .copy-btn{border-color:rgba(0,212,255,.2);color:rgba(0,212,255,.5)}
+[data-theme="future"] .copy-btn:hover{color:#00D4FF;border-color:rgba(0,212,255,.5)}
+[data-theme="future"] .home-link{color:rgba(0,212,255,.5)}
+[data-theme="future"] .home-link:hover{color:#00D4FF}
+[data-theme="future"] .setup-box{background:rgba(0,212,255,.04);border-color:rgba(0,212,255,.1)}
+[data-theme="future"] .setup-box strong{color:rgba(0,212,255,.8)}
+[data-theme="future"] .wake-guide{background:rgba(0,212,255,.04);border-color:rgba(0,212,255,.1)}
+[data-theme="future"] .meter-track{background:rgba(0,212,255,.08)}
+[data-theme="future"] .meter-fill{background:linear-gradient(90deg,#00D4FF 0%,#FFB800 55%,#FF2060 100%)}
+[data-theme="future"] .thresh-mark,[data-theme="future"] .thresh-line{background:rgba(0,212,255,.6)}
+[data-theme="future"] .conn{background:rgba(0,212,255,.06)}
+[data-theme="future"] .dot{background:#00D4FF}
+[data-theme="future"] .dot.off{background:#FF2060;box-shadow:0 0 6px #FF2060}
+[data-theme="future"] .divider{color:rgba(0,212,255,.35)}
+[data-theme="future"] .divider::before,[data-theme="future"] .divider::after{background:rgba(0,212,255,.12)}
+[data-theme="future"] input[type=range]{accent-color:#00D4FF}
+[data-theme="future"] .alert-banner.show{background:#FF2060;box-shadow:0 0 24px rgba(255,32,96,.4)}
+[data-theme="future"] .big-label{color:var(--text)}
+[data-theme="future"] .big-label.cry{color:#FF2060;text-shadow:0 0 20px rgba(255,32,96,.45)}
+[data-theme="future"] h1{letter-spacing:.14em;color:rgba(0,212,255,.55)}
+[data-theme="future"] .room-code{color:#00D4FF}
+[data-theme="future"] .section-label{color:rgba(0,212,255,.45);letter-spacing:.1em}
+
+/* ── Theme picker ─────────────────────────────────────────────────────────── */
+.theme-picker{
+  position:fixed;bottom:14px;right:14px;display:flex;gap:7px;z-index:200;
+  background:rgba(0,0,0,.25);padding:7px 9px;border-radius:20px;
+  backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.08)
+}
+[data-theme="rams"] .theme-picker{background:rgba(26,20,14,.15);border-color:rgba(26,20,14,.12)}
+.tp-btn{width:13px;height:13px;border-radius:50%;border:2px solid transparent;
+  cursor:pointer;padding:0;transition:transform .15s,border-color .15s}
+.tp-btn:hover{transform:scale(1.25)}
+.tp-dark{background:#2ecc71}
+.tp-rams{background:#CC6324}
+.tp-future{background:#00D4FF}
+.tp-btn.active{border-color:#fff;transform:scale(1.15)}
+[data-theme="rams"] .tp-btn.active{border-color:#1A1410}
 `;
+
+// ── Theme switcher snippet (added to every page body) ─────────────────────────
+const THEME_PICKER_HTML = `
+<div class="theme-picker" id="themePicker">
+  <button class="tp-btn tp-dark" onclick="setTheme('dark')" title="Default"></button>
+  <button class="tp-btn tp-rams" onclick="setTheme('rams')" title="Braun"></button>
+  <button class="tp-btn tp-future" onclick="setTheme('future')" title="Futuristic"></button>
+</div>`;
+
+const THEME_PICKER_JS = `
+function setTheme(t){
+  localStorage.setItem('bm-theme',t);
+  document.documentElement.setAttribute('data-theme',t);
+  document.querySelectorAll('.tp-btn').forEach(d=>d.classList.remove('active'));
+  const a=document.querySelector('.tp-'+t); if(a)a.classList.add('active');
+}
+(function(){
+  const t=localStorage.getItem('bm-theme')||'dark';
+  const a=document.querySelector('.tp-'+t); if(a)a.classList.add('active');
+})();`;
 
 // ── Landing page ──────────────────────────────────────────────────────────────
 const LANDING_HTML = `<!DOCTYPE html>
@@ -142,6 +314,7 @@ const LANDING_HTML = `<!DOCTYPE html>
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/icon.svg">
 <title>Baby Monitor</title>
+${THEME_INIT}
 <style>
 ${BASE_CSS}
 body{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:0}
@@ -153,11 +326,11 @@ h1{font-size:1.6rem;font-weight:700;margin-bottom:4px}
 .section-label{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
 .role-toggle{display:flex;gap:8px}
 .role-btn{flex:1;padding:12px 8px;border:1.5px solid var(--border);border-radius:10px;
-  background:transparent;color:rgba(255,255,255,.6);font-size:.88rem;cursor:pointer;
+  background:transparent;color:rgba(255,255,255,.55);font-size:.88rem;cursor:pointer;
   transition:all .15s;display:flex;flex-direction:column;align-items:center;gap:5px;line-height:1.2}
 .role-btn .icon{font-size:1.8rem}
 .role-btn:hover{border-color:rgba(255,255,255,.3);color:#fff}
-.role-btn.active{border-color:var(--green);background:rgba(46,204,113,.1);color:#fff}
+.role-btn.active{border-color:var(--green);background:rgba(46,204,113,.08);color:var(--text)}
 .divider{display:flex;align-items:center;gap:10px;font-size:.75rem;color:var(--muted)}
 .divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border)}
 .big-btn{width:100%;padding:14px;background:var(--green);border:none;border-radius:12px;
@@ -166,12 +339,12 @@ h1{font-size:1.6rem;font-weight:700;margin-bottom:4px}
 .big-btn:active{opacity:.78;transform:scale(.99)}
 .join-row{display:flex;gap:8px}
 .code-input{flex:1;padding:12px 14px;background:rgba(255,255,255,.06);border:1.5px solid var(--border);
-  border-radius:10px;color:#fff;font-size:1.1rem;font-family:monospace;letter-spacing:.12em;
+  border-radius:10px;color:var(--text);font-size:1.1rem;font-family:monospace;letter-spacing:.12em;
   text-transform:uppercase;outline:none;transition:border-color .15s;min-width:0}
 .code-input::placeholder{text-transform:none;letter-spacing:0;font-size:.9rem;color:var(--muted);font-family:-apple-system,sans-serif}
 .code-input:focus{border-color:rgba(255,255,255,.4)}
 .join-btn{padding:12px 16px;background:rgba(255,255,255,.08);border:1.5px solid var(--border);
-  border-radius:10px;color:#fff;font-size:.9rem;cursor:pointer;white-space:nowrap;transition:background .15s}
+  border-radius:10px;color:var(--text);font-size:.9rem;cursor:pointer;white-space:nowrap;transition:background .15s}
 .join-btn:hover{background:rgba(255,255,255,.15)}
 .error{min-height:1.2em;font-size:.8rem;color:var(--red);text-align:center;padding-top:6px}
 </style>
@@ -207,6 +380,8 @@ h1{font-size:1.6rem;font-weight:700;margin-bottom:4px}
   </div>
 </div>
 
+${THEME_PICKER_HTML}
+
 <script>
 'use strict';
 let role = 'baby';
@@ -221,6 +396,7 @@ const codeInput = document.getElementById('codeInput');
 codeInput.addEventListener('input', function() {
   this.value = this.value.toUpperCase().replace(/[^A-Z2-9]/g, '');
   document.getElementById('error').textContent = '';
+  if (this.value.length > 0) setRole('parent');
 });
 codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') joinRoom(); });
 
@@ -246,6 +422,7 @@ async function joinRoom() {
     document.getElementById('error').textContent = 'Could not connect. Try again.';
   }
 }
+${THEME_PICKER_JS}
 </script>
 </body>
 </html>`;
@@ -259,20 +436,21 @@ function buildBabyHTML(code) {
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Baby Monitor — Mic</title>
+${THEME_INIT}
 <style>
 ${BASE_CSS}
 body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:24px 24px 80px}
 .top-bar{position:fixed;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;
   padding:12px 16px;background:rgba(15,15,26,.9);backdrop-filter:blur(10px);
   border-bottom:1px solid var(--border);font-size:.82rem;z-index:10}
-.room-code{font-family:monospace;font-size:.95rem;letter-spacing:.1em;color:#fff;display:flex;align-items:center;gap:8px}
+.room-code{font-family:monospace;font-size:.95rem;letter-spacing:.1em;color:var(--text);display:flex;align-items:center;gap:8px}
 .copy-btn{padding:3px 10px;border:1px solid var(--border);border-radius:6px;background:transparent;
   color:var(--muted);font-size:.72rem;cursor:pointer;transition:all .15s}
-.copy-btn:hover{border-color:rgba(255,255,255,.3);color:#fff}
+.copy-btn:hover{border-color:rgba(255,255,255,.3);color:var(--text)}
 .home-link{color:var(--muted);text-decoration:none;font-size:.78rem}
-.home-link:hover{color:#fff}
+.home-link:hover{color:var(--text)}
 h1{font-size:1rem;font-weight:600;letter-spacing:.08em;opacity:.55;margin-top:8px}
-.mic-btn{width:130px;height:130px;border-radius:50%;border:2.5px solid rgba(255,255,255,.2);
+.mic-btn{width:130px;height:130px;border-radius:50%;border:2.5px solid var(--border);
   background:rgba(255,255,255,.04);cursor:pointer;font-size:3.5rem;
   display:flex;align-items:center;justify-content:center;transition:all .2s ease;user-select:none}
 .mic-btn:active{transform:scale(.94)}
@@ -291,8 +469,6 @@ input[type=range]{width:100%;accent-color:var(--red)}
 .alert-banner{display:none;width:100%;max-width:280px;padding:11px 16px;
   background:var(--red);border-radius:10px;font-weight:700;text-align:center}
 .alert-banner.show{display:block}
-
-/* Wake lock guide */
 .wake-section{width:100%;max-width:280px}
 .wake-row{display:flex;align-items:center;gap:8px;font-size:.78rem;color:var(--muted);margin-bottom:8px}
 .wake-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--muted)}
@@ -306,10 +482,8 @@ input[type=range]{width:100%;accent-color:var(--red)}
 </style>
 </head>
 <body>
-
 <div class="top-bar">
-  <div class="room-code">
-    Room <strong>${code}</strong>
+  <div class="room-code">Room <strong>${code}</strong>
     <button class="copy-btn" onclick="copyCode()">Copy</button>
   </div>
   <a class="home-link" href="/">← New room</a>
@@ -352,6 +526,8 @@ input[type=range]{width:100%;accent-color:var(--red)}
   </div>
 </div>
 
+${THEME_PICKER_HTML}
+
 <script>
 'use strict';
 const CODE = '${code}';
@@ -368,9 +544,8 @@ let threshold=30,smoothed=0,lastPost=0,wakeLock=null,guideOpen=false;
 
 function copyCode(){
   navigator.clipboard?.writeText(CODE).catch(()=>{});
-  const btn=document.querySelector('.copy-btn');
-  btn.textContent='Copied!';
-  setTimeout(()=>btn.textContent='Copy',1500);
+  const b=document.querySelector('.copy-btn');
+  b.textContent='Copied!'; setTimeout(()=>b.textContent='Copy',1500);
 }
 
 function toggleGuide(){
@@ -445,8 +620,7 @@ async function acquireWakeLock(){
   if(!navigator.wakeLock){
     wakeText.textContent='Screen may sleep — see how to fix';
     wakeDot.style.background='var(--amber)';
-    wakeToggle.style.display='inline';
-    return;
+    wakeToggle.style.display='inline'; return;
   }
   try{
     wakeLock=await navigator.wakeLock.request('screen');
@@ -467,6 +641,7 @@ async function acquireWakeLock(){
 document.addEventListener('visibilitychange',()=>{
   if(running&&document.visibilityState==='visible') acquireWakeLock();
 });
+${THEME_PICKER_JS}
 </script>
 </body>
 </html>`;
@@ -484,31 +659,34 @@ function buildParentHTML(code) {
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/icon.svg">
 <title>Baby Monitor</title>
+${THEME_INIT}
 <style>
 ${BASE_CSS}
 body{display:flex;flex-direction:column;align-items:center;justify-content:center;
   gap:24px;padding:24px 24px 80px;transition:background .35s ease}
 body.cry{background:#1c0404}
+[data-theme="rams"] body.cry{background:#D4C0B8}
+[data-theme="future"] body.cry{background:#120210}
 .top-bar{position:fixed;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;
   padding:12px 16px;background:rgba(15,15,26,.9);backdrop-filter:blur(10px);
   border-bottom:1px solid var(--border);font-size:.82rem;z-index:10}
-.room-code{font-family:monospace;font-size:.95rem;letter-spacing:.1em;display:flex;align-items:center;gap:8px}
+.room-code{font-family:monospace;font-size:.95rem;letter-spacing:.1em;color:var(--text);display:flex;align-items:center;gap:8px}
 .copy-btn{padding:3px 10px;border:1px solid var(--border);border-radius:6px;background:transparent;
   color:var(--muted);font-size:.72rem;cursor:pointer;transition:all .15s}
-.copy-btn:hover{border-color:rgba(255,255,255,.3);color:#fff}
+.copy-btn:hover{border-color:rgba(255,255,255,.3);color:var(--text)}
 .conn{display:flex;align-items:center;gap:6px;font-size:.7rem;color:var(--muted)}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--green)}
 .dot.off{background:var(--red);animation:blink 1s step-end infinite}
 @keyframes blink{50%{opacity:0}}
 .home-link{color:var(--muted);text-decoration:none;font-size:.78rem}
-.home-link:hover{color:#fff}
+.home-link:hover{color:var(--text)}
 .orb{width:160px;height:160px;border-radius:50%;border:3px solid var(--green);
   background:rgba(46,204,113,.1);display:flex;align-items:center;justify-content:center;
   font-size:4.5rem;transition:all .3s ease;box-shadow:0 0 40px rgba(46,204,113,.18);margin-top:8px}
 .orb.cry{border-color:var(--red);background:rgba(231,76,60,.15);
   box-shadow:0 0 70px rgba(231,76,60,.5);animation:throb .55s ease-in-out infinite alternate}
 @keyframes throb{from{transform:scale(1)}to{transform:scale(1.07)}}
-.big-label{font-size:1.9rem;font-weight:700;letter-spacing:.02em;transition:color .3s}
+.big-label{font-size:1.9rem;font-weight:700;letter-spacing:.02em;transition:color .3s;color:var(--text)}
 .big-label.cry{color:var(--red)}
 .sub{font-size:.82rem;color:var(--muted);margin-top:-16px}
 .meter-wrap{width:100%;max-width:300px}
@@ -522,7 +700,7 @@ body.cry{background:#1c0404}
 input[type=range]{width:100%;accent-color:var(--red)}
 .btns{display:flex;gap:10px}
 button.action{flex:1;padding:10px 14px;border:1.5px solid var(--border);border-radius:10px;
-  background:rgba(255,255,255,.05);color:#fff;font-size:.82rem;cursor:pointer;transition:background .15s}
+  background:rgba(255,255,255,.05);color:var(--text);font-size:.82rem;cursor:pointer;transition:background .15s}
 button.action:hover,button.action:active{background:rgba(255,255,255,.12)}
 button.action.push-on{border-color:var(--green);color:var(--green)}
 button.action.muted{border-color:var(--red);color:var(--red)}
@@ -536,8 +714,7 @@ button.action.muted{border-color:var(--red);color:var(--red)}
 <body id="body">
 
 <div class="top-bar">
-  <div class="room-code">
-    Room <strong>${code}</strong>
+  <div class="room-code">Room <strong>${code}</strong>
     <button class="copy-btn" onclick="copyCode()">Copy</button>
   </div>
   <div style="display:flex;align-items:center;gap:12px">
@@ -580,6 +757,8 @@ button.action.muted{border-color:var(--red);color:var(--red)}
   <div class="last-alert" id="lastAlert"></div>
 </div>
 
+${THEME_PICKER_HTML}
+
 <script>
 'use strict';
 const CODE = '${code}';
@@ -598,9 +777,8 @@ let audioCtx=null,swReg=null,reconnectDelay=1000,threshTimer=null;
 
 function copyCode(){
   navigator.clipboard?.writeText(CODE).catch(()=>{});
-  const btn=document.querySelector('.copy-btn');
-  btn.textContent='Copied!';
-  setTimeout(()=>btn.textContent='Copy',1500);
+  const b=document.querySelector('.copy-btn');
+  b.textContent='Copied!'; setTimeout(()=>b.textContent='Copy',1500);
 }
 
 threshSlider.oninput=()=>{
@@ -620,11 +798,11 @@ function toggleMute(){
   muteBtn.classList.toggle('muted',muted);
 }
 
-function testAlert(){ ensureAudio(); playBeeps(); }
+async function testAlert(){ await ensureAudio(); playBeeps(); }
 
-function ensureAudio(){
+async function ensureAudio(){
   if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-  if(audioCtx.state==='suspended') audioCtx.resume();
+  if(audioCtx.state==='suspended') await audioCtx.resume();
 }
 
 function onVolume(vol){
@@ -706,6 +884,7 @@ function connectSSE(){
 
 initSW();
 connectSSE();
+${THEME_PICKER_JS}
 </script>
 </body>
 </html>`;
@@ -732,7 +911,6 @@ const server = http.createServer(async (req, res) => {
   const { pathname } = url;
   const code = (url.searchParams.get('code') || '').toUpperCase().trim();
 
-  // ── PWA assets ──
   if (pathname === '/sw.js') {
     res.writeHead(200, { 'Content-Type': 'application/javascript', 'Service-Worker-Allowed': '/' });
     return res.end(SW_JS);
@@ -745,21 +923,10 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'image/svg+xml' });
     return res.end(ICON_SVG);
   }
-
-  // ── Landing ──
   if (pathname === '/') return html(res, LANDING_HTML);
+  if (pathname === '/create' && req.method === 'POST') return json(res, { code: createRoom() });
+  if (pathname === '/check') return json(res, { exists: rooms.has(code) });
 
-  // ── Create room ──
-  if (pathname === '/create' && req.method === 'POST') {
-    return json(res, { code: createRoom() });
-  }
-
-  // ── Check room exists ──
-  if (pathname === '/check') {
-    return json(res, { exists: rooms.has(code) });
-  }
-
-  // ── Role pages ──
   if (pathname === '/baby') {
     if (!getRoom(code)) return redirect(res, '/');
     return html(res, buildBabyHTML(code));
@@ -769,7 +936,6 @@ const server = http.createServer(async (req, res) => {
     return html(res, buildParentHTML(code));
   }
 
-  // ── SSE ──
   if (pathname === '/events') {
     const room = getRoom(code);
     if (!room) { res.writeHead(404); return res.end(); }
@@ -781,7 +947,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // ── Volume POST ──
   if (pathname === '/volume' && req.method === 'POST') {
     const room = getRoom(code);
     if (room) {
@@ -791,7 +956,6 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(204); return res.end();
   }
 
-  // ── Push subscribe ──
   if (pathname === '/subscribe' && req.method === 'POST') {
     const room = getRoom(code);
     if (room) {
@@ -801,7 +965,6 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(204); return res.end();
   }
 
-  // ── Threshold ──
   if (pathname === '/threshold' && req.method === 'POST') {
     const room = getRoom(code);
     if (room) {
@@ -818,7 +981,6 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('\n  Baby Monitor\n');
   console.log('  http://localhost:' + PORT + '\n');
   if (!process.env.VAPID_PUBLIC_KEY) {
-    console.log('  Railway environment variables (set these in your Railway project):');
     console.log('  VAPID_PUBLIC_KEY  = ' + VAPID_PUBLIC);
     console.log('  VAPID_PRIVATE_KEY = ' + VAPID_PRIVATE);
     console.log('');
