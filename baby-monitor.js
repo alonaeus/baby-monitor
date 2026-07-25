@@ -30,7 +30,7 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   VAPID_PUBLIC = keys.publicKey;
   VAPID_PRIVATE = keys.privateKey;
 }
-webpush.setVapidDetails('mailto:baby@monitor.local', VAPID_PUBLIC, VAPID_PRIVATE);
+webpush.setVapidDetails('mailto:axel@flipcx.com', VAPID_PUBLIC, VAPID_PRIVATE);
 
 // ── Rooms ─────────────────────────────────────────────────────────────────────
 const rooms = new Map();
@@ -1029,12 +1029,17 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(204); return res.end();
   }
 
+  if (pathname === '/debug') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ vapidPublicKey: VAPID_PUBLIC, rooms: rooms.size }));
+  }
+
   if (pathname === '/test-push') {
     const room = getRoom(code);
     if (!room) { res.writeHead(404); return res.end('room not found'); }
     room.lastPushAt = 0; // reset throttle
     await pushRoom(room, code);
-    res.writeHead(200); return res.end(`sent to ${room.pushSubs.size} subscriber(s)`);
+    res.writeHead(200); return res.end(`sent to ${room.pushSubs.size} subscriber(s)\n\nVAPID key: ${VAPID_PUBLIC}`);
   }
 
   if (pathname === '/threshold' && req.method === 'POST') {
