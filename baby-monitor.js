@@ -65,15 +65,21 @@ function broadcastRoom(room, payload) {
 }
 
 async function pushRoom(room, code) {
-  if (!room.pushSubs.size) return;
+  if (!room.pushSubs.size) { console.log('[push] no subscribers for', code); return; }
   const now = Date.now();
-  if (now - room.lastPushAt < 30_000) return;
+  if (now - room.lastPushAt < 30_000) { console.log('[push] throttled, skipping'); return; }
   room.lastPushAt = now;
+  console.log(`[push] sending to ${room.pushSubs.size} subscriber(s) for room ${code}`);
   const payload = JSON.stringify({ body: '🍼 Your baby is crying!', code });
   const dead = [];
   for (const [ep, sub] of room.pushSubs) {
-    try { await webpush.sendNotification(sub, payload); }
-    catch (e) { if (e.statusCode === 404 || e.statusCode === 410) dead.push(ep); }
+    try {
+      await webpush.sendNotification(sub, payload);
+      console.log('[push] sent ok to', ep.slice(0, 50));
+    } catch (e) {
+      console.error('[push] error:', e.statusCode, e.message, ep.slice(0, 50));
+      if (e.statusCode === 404 || e.statusCode === 410) dead.push(ep);
+    }
   }
   dead.forEach(ep => room.pushSubs.delete(ep));
 }
@@ -1014,10 +1020,21 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/subscribe' && req.method === 'POST') {
     const room = getRoom(code);
     if (room) {
-      try { const sub = JSON.parse(await readBody(req)); room.pushSubs.set(sub.endpoint, sub); }
-      catch {}
-    }
+      try {
+        const sub = JSON.parse(await readBody(req));
+        room.pushSubs.set(sub.endpoint, sub);
+        console.log(`[push] subscription registered for room ${code}, total: ${room.pushSubs.size}`);
+      } catch (e) { console.error('[push] subscribe parse error:', e.message); }
+    } else { console.error('[push] subscribe: room not found', code); }
     res.writeHead(204); return res.end();
+  }
+
+  if (pathname === '/test-push') {
+    const room = getRoom(code);
+    if (!room) { res.writeHead(404); return res.end('room not found'); }
+    room.lastPushAt = 0; // reset throttle
+    await pushRoom(room, code);
+    res.writeHead(200); return res.end(`sent to ${room.pushSubs.size} subscriber(s)`);
   }
 
   if (pathname === '/threshold' && req.method === 'POST') {
